@@ -6,7 +6,7 @@ const User = new mongoose.Schema({
     password:{type:String, required :true},
     verifyOTP:{type:String, default:''},
     expverifyOTP:{type:Number, default:0},
-    idverified:{type:Boolean, default:false},
+    isverified:{type:Boolean, default:false},
     resetOTP:{type:String,default:""},
     expresetOTP:{type:Number,default:0},
 })

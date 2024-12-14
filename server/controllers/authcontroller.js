@@ -138,68 +138,126 @@ export const logout = async (req,res)=>{
     }
 }
 
-export const sendVerifyOTP = async(req,res)=>
-{
+export const sendVerifyOTP = async (req, res) => {
     try {
-        const{ userId} = req.body;
-        const user = await userModel.findById(userId)
+        const { userId } = req.body;
 
-        if(user.idverified){
+        const user = await userModel.findById(userId);
+
+        if (!user) {
             return res.json({
-                success:false,
-                message:"already verified"
-            })
+                success: false,
+                message: "User not found",
+            });
         }
 
-    const OTP=String(Math.floor(100000+Math.random()*900000))
-        
-        user.verifyOTP =OTP;
+        if (user.isverified) {
+            return res.json({
+                success: false,
+                message: "Email already verified",
+            });
+        }
+
+        // Generate OTP
+        const OTP = String(Math.floor(100000 + Math.random() * 900000));
+
+        // Hash OTP before storing
+        const hashedOTP = await bcrypt.hash(OTP, 10);
+
+        // Store hashed OTP and expiry
+        user.verifyOTP = hashedOTP;
+        user.expverifyOTP = Date.now() + 24 * 60 * 60 * 1000; // Valid for 24 hours
+        await user.save();
+
+        // Send OTP via email
+        const mailOption = {
+            from: process.env.SENDER_EMAIL,
+            to: user.email,
+            subject: "OTP Verification for Our Website",
+            text: `Your OTP is ${OTP}. Please verify your account using this OTP within 24 hours.`,
+        };
+
+        await transporter.sendMail(mailOption);
+
+        return res.json({
+            success: true,
+            message: "Verification email sent",
+        });
+
+    } catch (error) {
+        return res.json({
+            success: false,
+            message: "Error sending OTP: " + error.message,
+        });
+    }
+};
 
 
-        user.expverifyOTP=Date.now()+24*60*60*1000;
+export const verifyEmail = async (req, res) => {
+    const { userId, OTP } = req.body;
+
+    if (!userId || !OTP) {
+        return res.json({
+            success: false,
+            message: "User ID and OTP are required",
+        });
+    }
+
+    try {
+        const user = await userModel.findById(userId);
+
+        if (!user) {
+            return res.json({
+                success: false,
+                message: "User not found",
+            });
+        }
+
+        if (user.isverified) {
+            return res.json({
+                success: false,
+                message: "Email already verified",
+            });
+        }
+
+        // Check if OTP has expired
+        if (Date.now() > user.expverifyOTP) {
+            // Clear expired OTP
+            user.verifyOTP = "";
+            user.expverifyOTP = 0;
+            await user.save();
+
+            return res.json({
+                success: false,
+                message: "OTP expired, please request a new one.",
+            });
+        }
+
+        // Verify OTP
+        const isMatch = await bcrypt.compare(OTP, user.verifyOTP);
+        if (!isMatch) {
+            return res.json({
+                success: false,
+                message: "Invalid OTP",
+            });
+        }
+
+        // Mark user as verified
+        user.isverified = true;
+        user.verifyOTP = "";
+        user.expverifyOTP = 0;
 
         await user.save();
-        
-        //send mail
 
-        const mailoption = {
-            from:process.env.SENDER_EMAIL,
-            to:user.email,
-            subject:'OTP verified to our website',
-            text:`your OTP is ${OTP} verify your account using this OTP`,
-        }
-        
-        await transporter.sendMail(mailoption) 
         return res.json({
-            success:true,
-            message:"verification sent"
-        })
+            success: true,
+            message: "Email verification successful",
+        });
 
     } catch (error) {
         return res.json({
-            success:false,
-            message:'error sending OTP'
-        })
+            success: false,
+            message: "Email verification failed: " + error.message,
+        });
     }
-}
-
-export const verifyEmail = async(req,res)=>{
-    
-        const {userId,OTP} = req.body;
-
-        if(!userId || !OTP )
-        {
-            return res.json({
-                success:false,
-                message:"failed in verify email"
-            })
-        }
-        try {
-        const user = await userModel.findById(userId)
-    } catch (error) {
-        return res.json({
-            success:false,
-            message:"failed in verify email"
-        })
-    }
-}
+};
